@@ -16,7 +16,7 @@ use haisou_chan::{channel, Bandwidth};
 
 use k256::{FieldBytes, Scalar, Secp256k1};
 use rand_core::OsRng;
-use structopt::StructOpt;
+use clap::StructOpt;
 
 fn scalar_hash(msg: &[u8]) -> Scalar {
     let digest = <Secp256k1 as DigestPrimitive>::Digest::new_with_prefix(msg);
