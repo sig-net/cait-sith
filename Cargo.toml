@@ -22,11 +22,11 @@ smol = "2.0.2"
 subtle = "2.5.0"
 
 [dev-dependencies]
-criterion = "0.4"
+criterion = "0.5"
 easy-parallel = "3.2.0"
 haisou-chan = { path = "./haisou-chan" }
-structopt = "0.3.26"
-k256 = { version = "0.13.1", features = ["sha256", "ecdsa", "serde"], optional = false }
+clap = "4.5"
+k256 = { version = "0.13.4", features = ["sha256", "ecdsa", "serde"], optional = false }
 
 [[bench]]
 name = "protocols"
