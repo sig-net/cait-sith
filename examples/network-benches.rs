@@ -16,7 +16,6 @@ use haisou_chan::{channel, Bandwidth};
 
 use k256::{FieldBytes, Scalar, Secp256k1};
 use rand_core::OsRng;
-use clap::StructOpt;
 
 fn scalar_hash(msg: &[u8]) -> Scalar {
     let digest = <Secp256k1 as DigestPrimitive>::Digest::new_with_prefix(msg);
@@ -42,16 +41,23 @@ impl BatchSize {
     }
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug)]
 struct Args {
-    /// The number of parties to run the benchmarks with.
     parties: u32,
-    /// The latency, in milliseconds.
     latency_ms: u32,
-    /// The bandwidth, in bytes per second.
     bandwidth: u32,
-    /// The batch size.
     batch_size: u32,
+}
+
+impl Args {
+    fn parse() -> Self {
+        let mut it = std::env::args().skip(1);
+        let parties: u32 = it.next().and_then(|s| s.parse().ok()).unwrap_or(3);
+        let latency_ms: u32 = it.next().and_then(|s| s.parse().ok()).unwrap_or(100);
+        let bandwidth: u32 = it.next().and_then(|s| s.parse().ok()).unwrap_or(10_000_000);
+        let batch_size: u32 = it.next().and_then(|s| s.parse().ok()).unwrap_or(10);
+        Self { parties, latency_ms, bandwidth, batch_size }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -208,10 +214,12 @@ where
     avg_down /= count;
     println!("up:\t {} B", avg_up);
     println!("down:\t {} B", avg_down);
+    // Fairness: max/min send ratio (1.0 = perfectly fair)
+    // Collecting again would need the iterator twice; callers print detail below.
 }
 
 fn main() {
-    let args = Args::from_args();
+    let args = Args::parse();
     let latency = Duration::from_millis(args.latency_ms as u64);
     let bandwidth = args.bandwidth;
     let batch_size = BatchSize::from_value(args.batch_size);

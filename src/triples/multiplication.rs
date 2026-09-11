@@ -175,6 +175,19 @@ pub async fn multiplication_receiver_many<'a, C: CSCurve, const N: usize>(
     Ok(ret)
 }
 
+fn fair_is_sender(me: Participant, p: Participant, sid: &[u8]) -> bool {
+    let order_sender = p < me;
+    if sid.is_empty() {
+        return order_sender;
+    }
+    let flip = (sid[0] & 1) == 1;
+    if flip {
+        !order_sender
+    } else {
+        order_sender
+    }
+}
+
 pub async fn multiplication<C: CSCurve>(
     ctx: Context<'_>,
     sid: Digest,
@@ -189,7 +202,7 @@ pub async fn multiplication<C: CSCurve>(
             let ctx = ctx.clone();
             let chan = ctx.private_channel(me, p);
             async move {
-                if p < me {
+                if fair_is_sender(me, p, sid.as_ref()) {
                     multiplication_sender::<C>(ctx, chan, sid.as_ref(), &a_i, &b_i).await
                 } else {
                     multiplication_receiver::<C>(ctx, chan, sid.as_ref(), &a_i, &b_i).await
@@ -214,6 +227,7 @@ pub async fn multiplication_many<C: CSCurve, const N: usize>(
     bv_iv: Vec<C::Scalar>,
 ) -> Result<Vec<C::Scalar>, ProtocolError> {
     assert!(N > 0);
+    let flip_sid: Vec<u8> = sid.first().map(|d| d.as_ref().to_vec()).unwrap_or_default();
     let sid_arc = Arc::new(sid);
     let av_iv_arc = Arc::new(av_iv);
     let bv_iv_arc = Arc::new(bv_iv);
@@ -222,11 +236,12 @@ pub async fn multiplication_many<C: CSCurve, const N: usize>(
         let sid_arc = sid_arc.clone();
         let av_iv_arc = av_iv_arc.clone();
         let bv_iv_arc = bv_iv_arc.clone();
+        let flip_sid = flip_sid.clone();
         let fut = {
             let ctx = ctx.clone();
             let chan = ctx.private_channel(me, p);
             async move {
-                if p < me {
+                if fair_is_sender(me, p, &flip_sid) {
                     multiplication_sender_many::<C, N>(
                         ctx,
                         chan,

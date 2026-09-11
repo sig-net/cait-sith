@@ -27,6 +27,7 @@ easy-parallel = "3.2.0"
 haisou-chan = { path = "./haisou-chan" }
 clap = "4.5"
 k256 = { version = "0.13", features = ["sha256", "ecdsa", "serde"], optional = false }
+proptest = "1.4"
 
 [[bench]]
 name = "protocols"

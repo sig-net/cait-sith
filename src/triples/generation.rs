@@ -79,11 +79,13 @@ async fn do_generation<C: CSCurve>(
     // Spec 2.3
     transcript.message(b"confirmation", my_confirmation.as_ref());
 
-    // Spec 2.4
+    // Spec 2.4 (cache e0/f0: each evaluate_zero is O(t), reuse below)
+    let e0 = e.evaluate_zero();
+    let f0 = f.evaluate_zero();
+    let big_e_i_zero = big_e_i.evaluate_zero();
+    let big_f_i_zero = big_f_i.evaluate_zero();
     let fut = {
         let ctx = ctx.clone();
-        let e0 = e.evaluate_zero();
-        let f0 = f.evaluate_zero();
         multiplication::<C>(ctx, my_confirmation, participants.clone(), me, e0, f0)
     };
     let multiplication_task = ctx.spawn(fut);
@@ -94,11 +96,9 @@ async fn do_generation<C: CSCurve>(
 
     // Spec 2.6
     let statement0 = dlog::Statement::<C> {
-        public: &big_e_i.evaluate_zero(),
+        public: &big_e_i_zero,
     };
-    let witness0 = dlog::Witness::<C> {
-        x: &e.evaluate_zero(),
-    };
+    let witness0 = dlog::Witness::<C> { x: &e0 };
     let my_phi_proof0 = dlog::prove(
         &mut rng,
         &mut transcript.forked(b"dlog0", &me.bytes()),
@@ -106,11 +106,9 @@ async fn do_generation<C: CSCurve>(
         witness0,
     );
     let statement1 = dlog::Statement::<C> {
-        public: &big_f_i.evaluate_zero(),
+        public: &big_f_i_zero,
     };
-    let witness1 = dlog::Witness::<C> {
-        x: &f.evaluate_zero(),
-    };
+    let witness1 = dlog::Witness::<C> { x: &f0 };
     let my_phi_proof1 = dlog::prove(
         &mut rng,
         &mut transcript.forked(b"dlog1", &me.bytes()),
@@ -272,17 +270,15 @@ async fn do_generation<C: CSCurve>(
     }
 
     // Spec 3.8
-    let big_c_i = big_f.evaluate_zero() * e.evaluate_zero();
+    let big_c_i = big_f.evaluate_zero() * e0;
 
     // Spec 3.9
     let statement = dlogeq::Statement::<C> {
-        public0: &big_e_i.evaluate_zero(),
+        public0: &big_e_i_zero,
         generator1: &big_f.evaluate_zero(),
         public1: &big_c_i,
     };
-    let witness = dlogeq::Witness {
-        x: &e.evaluate_zero(),
-    };
+    let witness = dlogeq::Witness { x: &e0 };
     let my_phi_proof = dlogeq::prove(
         &mut rng,
         &mut transcript.forked(b"dlogeq0", &me.bytes()),
@@ -466,14 +462,14 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
         &u64::try_from(threshold).unwrap().to_be_bytes(),
     );
 
-    let mut my_commitments = vec![];
-    let mut my_randomizers = vec![];
-    let mut e_v = vec![];
-    let mut f_v = vec![];
-    let mut l_v = vec![];
-    let mut big_e_i_v = vec![];
-    let mut big_f_i_v = vec![];
-    let mut big_l_i_v = vec![];
+    let mut my_commitments = Vec::with_capacity(N);
+    let mut my_randomizers = Vec::with_capacity(N);
+    let mut e_v = Vec::with_capacity(N);
+    let mut f_v = Vec::with_capacity(N);
+    let mut l_v = Vec::with_capacity(N);
+    let mut big_e_i_v = Vec::with_capacity(N);
+    let mut big_f_i_v = Vec::with_capacity(N);
+    let mut big_l_i_v = Vec::with_capacity(N);
 
     for _ in 0..N {
         // Spec 1.2
@@ -555,8 +551,8 @@ async fn do_generation_many<C: CSCurve, const N: usize>(
     let wait1 = chan.next_waitpoint();
     chan.send_many(wait1, &my_confirmations).await;
 
-    let mut my_phi_proof0v = vec![];
-    let mut my_phi_proof1v = vec![];
+    let mut my_phi_proof0v = Vec::with_capacity(N);
+    let mut my_phi_proof1v = Vec::with_capacity(N);
 
     for i in 0..N {
         let big_e_i = &big_e_i_v[i];

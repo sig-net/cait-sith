@@ -4,31 +4,15 @@ use cait_sith::{
     keygen, presign,
     protocol::{run_protocol, Participant, Protocol},
     sign,
-    triples::{
-        self, generate_triple, setup, Setup, TripleGenerationOutput, TriplePub, TripleShare,
-    },
+    triples::{self, generate_triple, TripleGenerationOutput, TriplePub, TripleShare},
     FullSignature, KeygenOutput, PresignArguments, PresignOutput,
 };
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use k256::{AffinePoint, Scalar, Secp256k1};
 use rand_core::OsRng;
 
-fn run_setup(participants: Vec<Participant>) -> Vec<(Participant, Setup)> {
-    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = Setup>>)> =
-        Vec::with_capacity(participants.len());
-
-    for p in participants.iter() {
-        let protocol = setup::<Secp256k1>(&participants, *p);
-        assert!(protocol.is_ok());
-        let protocol = protocol.unwrap();
-        protocols.push((*p, Box::new(protocol)));
-    }
-
-    run_protocol(protocols).unwrap()
-}
-
 fn run_triple_generation(
-    participants: Vec<(Participant, Setup)>,
+    participants: Vec<Participant>,
     threshold: usize,
 ) -> Vec<(Participant, TripleGenerationOutput<Secp256k1>)> {
     let mut protocols: Vec<(
@@ -36,13 +20,11 @@ fn run_triple_generation(
         Box<dyn Protocol<Output = TripleGenerationOutput<Secp256k1>>>,
     )> = Vec::with_capacity(participants.len());
 
-    let just_participants: Vec<_> = participants.iter().map(|(p, _)| *p).collect();
-
-    for (p, setup) in participants.into_iter() {
-        let protocol = generate_triple(&just_participants, p, setup, threshold);
+    for p in participants.iter() {
+        let protocol = generate_triple(&participants, *p, threshold);
         assert!(protocol.is_ok());
         let protocol = protocol.unwrap();
-        protocols.push((p, Box::new(protocol)));
+        protocols.push((*p, Box::new(protocol)));
     }
 
     run_protocol(protocols).unwrap()
@@ -93,8 +75,9 @@ fn run_presign(
         let protocol = presign(
             &participant_list,
             p,
+            &participant_list,
+            p,
             PresignArguments {
-                original_threshold: threshold,
                 triple0: (share0, pub0.clone()),
                 triple1: (share1, pub1.clone()),
                 keygen_out,
@@ -131,6 +114,8 @@ fn run_sign(
     run_protocol(protocols).unwrap()
 }
 
+
+
 pub fn criterion_benchmark(c: &mut Criterion) {
     let participants = vec![
         Participant::from(0u32),
@@ -139,13 +124,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     ];
     let t = 3;
 
-    c.bench_function("setup 3", |b| b.iter(|| run_setup(participants.clone())));
-
-    let mut setup_result = run_setup(participants.clone());
-    setup_result.sort_by_key(|(p, _)| *p);
-
     c.bench_function("triple generation (3, 3)", |b| {
-        b.iter(|| run_triple_generation(black_box(setup_result.clone()), t))
+        b.iter(|| run_triple_generation(black_box(participants.clone()), t))
     });
 
     c.bench_function("keygen (3,3)", |b| {
@@ -176,7 +156,6 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let mut presign_result = run_presign(keygen_result, shares0, shares1, &pub0, &pub1, t);
     presign_result.sort_by_key(|(p, _)| *p);
 
-    // DO NOT COPY THIS CODE FOR ACTUAL SIGNING
     let msg = Scalar::ONE;
 
     c.bench_function("sign (3,3)", |b| {

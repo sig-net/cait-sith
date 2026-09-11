@@ -1,0 +1,55 @@
+theory PresignSingleRound
+begin
+
+/* Symbolic model of the optimized 1-round presign broadcast.
+ * Each party sends ONE broadcast: (kd_i, ka_i, xb_i).
+ * The adversary controls the network (Dolev-Yao), may rush, drop,
+ * replay, or inject shares, but cannot forge the commitment checks
+ * G*kd == KD, G*ka == K+A, G*xb == X+B without knowing the discrete log.
+ *
+ * This mirrors src/presign.rs after the 2->1 collapse:
+ *   wait0 = send_many(kd_i, ka_i, xb_i); recv all; check; output.
+ * Fair OT/MTA role rotation is modeled as a public coin flip(sid):
+ *   sender = if flip then (me < peer) else (me > peer).
+ */
+
+builtins: hashing, multiset
+
+functions: G/1, share/2, check/2, flip/1
+
+rule HonestSend:
+  [ Fr(~kd), Fr(~ka), Fr(~xb), !Pk($P, G(~sk)) ]
+  --[ Send($P, <~kd, ~ka, ~xb>), SingleSend($P) ]->
+  [ Out(<~kd, ~ka, ~xb>), StSent($P, <~kd, ~ka, ~xb>) ]
+
+rule HonestRecvOk:
+  [ StSent($P, <~kd, ~ka, ~xb>), In(<kdJ, kaJ, xbJ>) ]
+  --[ Recv($P), Eq(check(<kdJ, kaJ, xbJ>), true) ]->
+  [ StDone($P) ]
+
+rule AdversaryTamper:
+  [ In(<kdJ, kaJ, xbJ>) ]
+  --[ Tamper(<kdJ, kaJ, xbJ>) ]->
+  [ Out(<kdJ, kaJ, h(xbJ)>) ]
+
+/* The flipped sender election agrees: both parties derive the same bit. */
+rule RoleAgree:
+  [ In(~sid) ]
+  --[ Role($A, $B, flip(~sid)) ]->
+  [ Out(flip(~sid)) ]
+
+/* LEMMAS (validate with: tamarin-prover --prove models/presign_single_round.spthy) */
+
+lemma single_broadcast:
+  "All P #i #j. Send(P, <kd, ka, xb>) @ #i & Send(P, <kd2, ka2, xb2>) @ #j ==> #i = #j"
+
+lemma tamper_detected:
+  "All x #t. Tamper(x) @ #t ==> (Ex P #r. Recv(P) @ #r & not (Ex #d. StDone(P) @ #d)) | (Ex #d. Eq(check(x), true) @ #d)"
+
+lemma roles_agree:
+  "All A B s #i. Role(A, B, s) @ #i ==> Role(B, A, s) @ #i"
+
+lemma secrecy_needs_threshold:
+  "All kd #s. Send(<kd>) @ #s ==> not (Ex #a. K(kd) @ #a & not (Ex P #t. Send(P, kd) @ #t))"
+
+end

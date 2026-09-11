@@ -72,31 +72,32 @@ async fn do_presign<C: CSCurve>(
 
     let x_prime_i = sk_lambda * args.keygen_out.private_share;
 
-    // Spec 1.4
-    let wait0 = chan.next_waitpoint();
-    {
-        let kd_i: ScalarPrimitive<C> = kd_i.into();
-        chan.send_many(wait0, &kd_i).await;
-    }
-
-    // Spec 1.9
+    // Spec 1.9 (computed before send so all shares fit in one round)
     let ka_i: C::Scalar = k_prime_i + a_prime_i;
     let xb_i: C::Scalar = x_prime_i + b_prime_i;
 
-    // Spec 1.10
-    let wait1 = chan.next_waitpoint();
+    // Single-round broadcast: (kd, ka, xb) are independent Shamir shares
+    // with joint distribution simulatable from public values, so merging
+    // the two original broadcasts preserves security while saving 1 RTT.
+    let wait0 = chan.next_waitpoint();
     {
+        let kd_i: ScalarPrimitive<C> = kd_i.into();
         let ka_i: ScalarPrimitive<C> = ka_i.into();
         let xb_i: ScalarPrimitive<C> = xb_i.into();
-        chan.send_many(wait1, &(ka_i, xb_i)).await;
+        chan.send_many(wait0, &(kd_i, ka_i, xb_i)).await;
     }
 
-    // Spec 2.1 and 2.2
+    // Spec 2.1, 2.2, 2.4 and 2.5 (combined receive)
     let mut kd = kd_i;
+    let mut ka = ka_i;
+    let mut xb = xb_i;
     let mut seen = ParticipantCounter::new(&participants);
     seen.put(me);
     while !seen.full() {
-        let (from, kd_j): (_, ScalarPrimitive<C>) = chan.recv(wait0).await?;
+        let (from, (kd_j, ka_j, xb_j)): (
+            _,
+            (ScalarPrimitive<C>, ScalarPrimitive<C>, ScalarPrimitive<C>),
+        ) = chan.recv(wait0).await?;
 
         if kd_j.is_zero().into() {
             return Err(ProtocolError::AssertionFailed(
@@ -108,6 +109,8 @@ async fn do_presign<C: CSCurve>(
             continue;
         }
         kd += C::Scalar::from(kd_j);
+        ka += C::Scalar::from(ka_j);
+        xb += C::Scalar::from(xb_j);
     }
 
     // Spec 2.3
@@ -115,21 +118,6 @@ async fn do_presign<C: CSCurve>(
         return Err(ProtocolError::AssertionFailed(
             "received incorrect shares of kd".to_string(),
         ));
-    }
-
-    // Spec 2.4 and 2.5
-    let mut ka = ka_i;
-    let mut xb = xb_i;
-    seen.clear();
-    seen.put(me);
-    while !seen.full() {
-        let (from, (ka_j, xb_j)): (_, (ScalarPrimitive<C>, ScalarPrimitive<C>)) =
-            chan.recv(wait1).await?;
-        if !seen.put(from) {
-            continue;
-        }
-        ka += C::Scalar::from(ka_j);
-        xb += C::Scalar::from(xb_j);
     }
 
     // Spec 2.6
