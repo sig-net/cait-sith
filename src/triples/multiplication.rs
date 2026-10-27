@@ -175,6 +175,12 @@ pub async fn multiplication_receiver_many<'a, C: CSCurve, const N: usize>(
     Ok(ret)
 }
 
+/// Whether `me` takes the sender role toward `other`: the higher id for an even sid,
+/// the lower otherwise, so the role evens out over sessions.
+fn is_sender(sid: &Digest, me: Participant, other: Participant) -> bool {
+    (other < me) == (sid.as_ref()[0] % 2 == 0)
+}
+
 pub async fn multiplication<C: CSCurve>(
     ctx: Context<'_>,
     sid: Digest,
@@ -189,7 +195,7 @@ pub async fn multiplication<C: CSCurve>(
             let ctx = ctx.clone();
             let chan = ctx.private_channel(me, p);
             async move {
-                if p < me {
+                if is_sender(&sid, me, p) {
                     multiplication_sender::<C>(ctx, chan, sid.as_ref(), &a_i, &b_i).await
                 } else {
                     multiplication_receiver::<C>(ctx, chan, sid.as_ref(), &a_i, &b_i).await
@@ -226,7 +232,7 @@ pub async fn multiplication_many<C: CSCurve, const N: usize>(
             let ctx = ctx.clone();
             let chan = ctx.private_channel(me, p);
             async move {
-                if p < me {
+                if is_sender(&sid_arc[0], me, p) {
                     multiplication_sender_many::<C, N>(
                         ctx,
                         chan,
@@ -271,7 +277,7 @@ mod test {
     use rand_core::OsRng;
 
     use crate::{
-        crypto::hash,
+        crypto::{hash, Digest},
         participants::ParticipantList,
         protocol::{
             internal::{make_protocol, Context},
@@ -279,10 +285,23 @@ mod test {
         },
     };
 
-    use super::multiplication;
+    use super::{is_sender, multiplication};
+
+    fn sid_with_parity(parity: u8) -> Digest {
+        (0u32..)
+            .map(|s| hash(&s))
+            .find(|d| d.as_ref()[0] % 2 == parity)
+            .unwrap()
+    }
 
     #[test]
     fn test_multiplication() -> Result<(), ProtocolError> {
+        // An even and an odd sid, so both orders of the sender role run.
+        check_multiplication(sid_with_parity(0))?;
+        check_multiplication(sid_with_parity(1))
+    }
+
+    fn check_multiplication(sid: Digest) -> Result<(), ProtocolError> {
         let participants = vec![
             Participant::from(0u32),
             Participant::from(1u32),
@@ -302,8 +321,6 @@ mod test {
 
         let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = Scalar>>)> =
             Vec::with_capacity(prep.len());
-
-        let sid = hash(b"sid");
 
         for (p, a_i, b_i) in prep {
             let ctx = Context::new();
@@ -329,5 +346,14 @@ mod test {
         assert_eq!(a * b, c);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_sender_role_flips_with_sid_parity() {
+        let (even, odd) = (sid_with_parity(0), sid_with_parity(1));
+        let (low, high) = (Participant::from(3u32), Participant::from(8u32));
+        // Exactly one side sends, and which one flips with the sid.
+        assert!(is_sender(&even, high, low) && !is_sender(&even, low, high));
+        assert!(is_sender(&odd, low, high) && !is_sender(&odd, high, low));
     }
 }
