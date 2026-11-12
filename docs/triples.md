@@ -73,6 +73,8 @@ way to determine which of two parties $P_a$ and $P_b$
 will act as the sender.
 We do this by imposing a total order $<$ on the parties, and $P_a$
 is the sender in the $(P_a, P_b)$ pair, if $P_a < P_b$.
+The order is the order of ids, reversed when the session id is odd,
+so each party holds each role equally often across sessions.
 
 The end result is that $P_a$ will learn $K_{ij}^0$ and $K_{ij}^1$,
 and $P_b$ will learn $K_{ij}^{\Delta_ i}$, for a randomly chosen $\Delta \in \mathbb{F}_2^{\lambda}$.

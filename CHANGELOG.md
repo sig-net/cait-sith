@@ -1,3 +1,7 @@
+# Unreleased
+
+- Alternate the multiplication sender role per session (id order, reversed for odd session ids). Incompatible with earlier versions: upgrade all parties together.
+
 # 0.8.0
 
 - Added an extra requirement to Curve API for constant-time scalar sampling
